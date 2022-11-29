@@ -1,9 +1,13 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 
 #include "Constants.h"
 #include "CLI/CLI.h"
 #include "Utils/Utils.h"
+
+WiFiUDP udp;
+uint16_t local_port = 2390;
 
 void setup() {
     pinMode(PIN_LED_STATUS, OUTPUT);
@@ -27,9 +31,26 @@ void setup() {
         print("Failed to connect to wifi!");
     }
 
+    udp.begin(local_port);
+
     print("Setup complete\n\n");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+    char buffer[255];
+    int packet_size = udp.parsePacket();
+    if (packet_size) {
+        print("Received packet of size %d\n", packet_size);
+        print("From %s:%d\n", udp.remoteIP().toString().c_str(), udp.remotePort());
+
+        // read the packet into packetBufffer
+        int len = udp.read(buffer, 255);
+
+        // null-terminate
+        if (len > 0) {
+            buffer[len] = 0;
+        }
+
+        print("Contents: %s\n", buffer);
+    }
 }
