@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 
-
 // Strings
 const char* const APP_NAME = "Ambilight";
 const char* const MDNS_DOMAIN_NAME = "ambilight-client";

@@ -4,9 +4,9 @@ Ambilight is an ambient lighting installation that provides back-illumination
 for a TV. In its primary operating mode, Ambilight provides illumination
 matching the content displayed on the TV. 
 
-This is accomplished by way of a separate Ambilight-Server device, which is a 
-Raspberry Pi with a camera pointed at the TV. The server and client communicate
-over UDP.
+A separate Ambilight server device consists of a Raspberry Pi with a camera 
+pointed at the TV, and sends data to the client, The server and client 
+communicate over UDP.
 
 ## Definitions
 Server = Raspberry Pi with camera (ambilight-server)
