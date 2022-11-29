@@ -46,3 +46,41 @@ the timeout.
 2. Web server on ESP32 (ambilight-client)
   Similar to the audiobox controller, this will allow simple on/off controls and
   mode changes (e.g. TV mode vs solid color modes).
+
+  ## State Machines
+  ### Client
+  *State: IDLE*
+
+  Behavior: Listen for discovery message. Send config packets every 
+  IDLE_CONFIG_MS
+  
+  Transition: On receipt of discovery message, store server's IP/port, start
+  timer for DISCOVERY_MS, and transition to DISCOVERY state.
+
+  *State: DISCOVERY*
+
+  Behavior: Send config packets every DISCOVERY_CONFIG_MS.
+
+  Transition: On receipt of ACK, transition to DATA state. If no ACK is
+  received before timeout, transition to IDLE state.
+
+  *State: DATA*
+
+  Behavior: Listen for data messages. Immediately parse and send to LEDs.
+  
+  Transition: On receipt of discovery message, transition to DISCOVERY state.
+
+  ### Server
+  *State: DISCOVERY*
+
+  Behavior: Start DISCOVERY_MS timer. Send discovery packets every 
+  DISCOVERY_BROADCAST_MS. Listen for config packets, and when received, add 
+  client's information to dictionary and send ACK.
+
+  Transition: On timeout, transition to DATA state.
+
+  *State: DATA*
+  
+  Behavior: If data is available, send it to all clients in the dictionary.
+
+  Transition: None
