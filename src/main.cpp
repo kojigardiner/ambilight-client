@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <AsyncUDP.h>
 #include <time.h>
 #include <FastLED.h>
 
@@ -115,16 +114,17 @@ void loop() {
                             server_port = udp.remotePort();
                             print("Setting server as %s:%d\n", server_ip.toString().c_str(), server_port);
                             
-                            // Commented out the code below to keep using the UDP_BROADCAST_PORT 
+                            // Comment out the code below to keep using the UDP_BROADCAST_PORT 
                             // instead of randomizing it.
                             // In a real-world use case we probably want to randomize the port to
-                            // prevent server spoofing attacks, but this allows us to keep listening
-                            // for discovery packets once we start collecting data.
+                            // prevent server spoofing attacks. Continuing to use UDP_BROADCAST_PORT
+                            // allows us to keep listening for discovery packets 
+                            // once we start collecting data.
 
-                            // udp.stop();
-                            // local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
-                            // print("Restarting UDP service on port %d\n", local_port);
-                            // udp.begin(local_port);
+                            udp.stop();
+                            local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
+                            print("Restarting UDP service on port %d\n", local_port);
+                            udp.begin(local_port);
 
                             timer.set_timeout_ms(DISCOVERY_TIMEOUT_MS);
                             print("Transition: IDLE ==> DISCOVERY\n");
@@ -176,6 +176,7 @@ void loop() {
                 if (timer.has_elapsed()) {
                     print("Timed out\n");
                     print("Transition: DISCOVERY ==> IDLE\n");
+                    state = IDLE;
                 }
                 vTaskDelay(DISCOVERY_CONFIG_MS / portTICK_PERIOD_MS);
 
@@ -209,11 +210,11 @@ void loop() {
                             memcpy(leds, decoded_message.data.led_data.bytes, to_copy);
                             FastLED.show();
                         }
-                        if (decoded_message.type == MessageType_DISCOVERY) {
-                            print("Received unexpected discovery message! Resetting\n");
-                            print("Transition: DATA ==> IDLE\n");
-                            state = IDLE;
-                        }
+                        // if (decoded_message.type == MessageType_DISCOVERY) {
+                        //     print("Received unexpected discovery message! Resetting\n");
+                        //     print("Transition: DATA ==> IDLE\n");
+                        //     state = IDLE;
+                        // }
                     }
                 }
                 break;

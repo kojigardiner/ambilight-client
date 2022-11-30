@@ -35,7 +35,7 @@ the timeout.
     Server timestamp
     LED RGB array - for ambilight, this will be TV data
                     for audiobox, this will be images, animations, etc
-2. Clients ACK every received transaction
+2. (Optional) Clients ACK every received transaction
     ACK
     Sequence #
     Client timestamp
@@ -50,14 +50,13 @@ the timeout.
   ## State Machines
   ### Client
   *State: START*
-  Behavior: Setup UDP port.
+  Behavior: Setup UDP port to receive broadcast messages.
 
   Transition: Once setup, transition to IDLE.
 
   *State: IDLE*
 
-  Behavior: Listen for discovery message. Send config packets every 
-  IDLE_CONFIG_MS
+  Behavior: Listen for discovery message.
   
   Transition: On receipt of discovery message, store server's IP/port, start
   timer for DISCOVERY_MS, and transition to DISCOVERY state.
@@ -75,7 +74,8 @@ the timeout.
   than the last received, immediately send to LEDs and update the last seen
   sequence number.
   
-  Transition: On receipt of discovery message, transition to DISCOVERY state.
+  Transition: On receipt of discovery message, transition back to IDLE state in
+  order to re-establish connection.
 
   ### Server
   *State: DISCOVERY*

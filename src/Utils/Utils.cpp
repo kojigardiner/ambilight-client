@@ -163,3 +163,4 @@ void get_memory_stats_with_caller(const char *caller_name, int line) {
     print("largest free block (MALLOC_CAP_DEFAULT):  %d\n", heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
     print("task high-water mark:                     %d\n", uxTaskGetStackHighWaterMark(NULL));
 }
+
