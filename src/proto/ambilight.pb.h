@@ -29,13 +29,6 @@ typedef enum _LedFormat {
 } LedFormat;
 
 /* Struct definitions */
-typedef struct _Example { 
-    bool has_type;
-    int32_t type;
-    bool has_name;
-    char name[41];
-} Example;
-
 typedef struct _Message_Config { 
     bool has_ipv4;
     char ipv4[16];
@@ -93,18 +86,14 @@ extern "C" {
 #endif
 
 /* Initializer values for message structs */
-#define Example_init_default                     {false, 0, false, ""}
 #define Message_init_default                     {false, _Sender_MIN, false, _MessageType_MIN, false, 0, false, 0, false, Message_Config_init_default, false, Message_Data_init_default}
 #define Message_Config_init_default              {false, "", false, 0, false, 0, false, _LedFormat_MIN}
 #define Message_Data_init_default                {false, {0, {0}}, false, {0, {0}}, false, 0}
-#define Example_init_zero                        {false, 0, false, ""}
 #define Message_init_zero                        {false, _Sender_MIN, false, _MessageType_MIN, false, 0, false, 0, false, Message_Config_init_zero, false, Message_Data_init_zero}
 #define Message_Config_init_zero                 {false, "", false, 0, false, 0, false, _LedFormat_MIN}
 #define Message_Data_init_zero                   {false, {0, {0}}, false, {0, {0}}, false, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
-#define Example_type_tag                         1
-#define Example_name_tag                         2
 #define Message_Config_ipv4_tag                  1
 #define Message_Config_port_tag                  2
 #define Message_Config_num_leds_tag              3
@@ -120,12 +109,6 @@ extern "C" {
 #define Message_data_tag                         6
 
 /* Struct field encoding specification for nanopb */
-#define Example_FIELDLIST(X, a) \
-X(a, STATIC,   OPTIONAL, INT32,    type,              1) \
-X(a, STATIC,   OPTIONAL, STRING,   name,              2)
-#define Example_CALLBACK NULL
-#define Example_DEFAULT NULL
-
 #define Message_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, UENUM,    sender,            1) \
 X(a, STATIC,   OPTIONAL, UENUM,    type,              2) \
@@ -153,19 +136,16 @@ X(a, STATIC,   OPTIONAL, INT32,    led_position,      3)
 #define Message_Data_CALLBACK NULL
 #define Message_Data_DEFAULT NULL
 
-extern const pb_msgdesc_t Example_msg;
 extern const pb_msgdesc_t Message_msg;
 extern const pb_msgdesc_t Message_Config_msg;
 extern const pb_msgdesc_t Message_Data_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
-#define Example_fields &Example_msg
 #define Message_fields &Message_msg
 #define Message_Config_fields &Message_Config_msg
 #define Message_Data_fields &Message_Data_msg
 
 /* Maximum encoded size of messages (where known) */
-#define Example_size                             53
 #define Message_Config_size                      41
 #define Message_Data_size                        848
 #define Message_size                             920

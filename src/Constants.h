@@ -28,6 +28,7 @@ typedef enum state {
 }
 
 #define PIN_LED_STATUS 2    // Status LED on ESP32 Hiletgo board
+#define PIN_LED_CONTROL 12  // LED control line
 
 // Maximum string lengths
 #define HTTP_MAX_CHARS 512    // max number of chars for http processing
@@ -41,6 +42,7 @@ typedef enum state {
 // Timeouts
 #define WIFI_TIMEOUT_MS 10000               // how long to wait on wifi connect before bailing out
 #define DISCOVERY_CONFIG_MS 1000            // how long to wait between discovery loops
+#define DISCOVERY_TIMEOUT_MS 10000          // how long to wait in discovery state before returning to idle
 
 // UDP Port Range
 #define UDP_BROADCAST_PORT 3000

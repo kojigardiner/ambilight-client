@@ -2,9 +2,11 @@
 #include <WiFi.h>
 #include <AsyncUDP.h>
 #include <time.h>
+#include <FastLED.h>
 
 #include "Constants.h"
 #include "CLI/CLI.h"
+#include "Timer/Timer.h"
 #include "Utils/Utils.h"
 
 // Nanopb
@@ -16,6 +18,9 @@
 // Function Prototypes
 bool parse_pb(WiFiUDP *udp, int packet_size, Message *message);
 bool create_config_pb(uint8_t *buffer, size_t *message_length, IPAddress local_ip, uint16_t local_port);
+
+// Global LEDs array
+CRGB leds[NUM_LEDS] = {0};
 
 void setup() {
     pinMode(PIN_LED_STATUS, OUTPUT);
@@ -40,6 +45,12 @@ void setup() {
     // Minimize latency in exchange for using more power
     WiFi.setSleep(false);
 
+    // Setup LEDs
+    print("Initializing LEDs on pin %d\n", PIN_LED_CONTROL);
+    FastLED.addLeds<WS2812, PIN_LED_CONTROL, GRB>(leds, NUM_LEDS);
+    FastLED.clear();
+    FastLED.show();
+
     // Seed PRNG
     srand(time(NULL));
 
@@ -61,13 +72,16 @@ void loop() {
 
     uint32_t sequence_number = -1;
 
+    Timer timer = Timer();
+
     state_t state = START;
+
 
     for (;;) {
         switch (state) {
             /*
                 State: START
-                Behavior: Setup UDP port.
+                Behavior: Setup UDP port to receive broadcast messages.
                 Transition: Once setup, transition to IDLE.
              */
             case START: {
@@ -82,8 +96,7 @@ void loop() {
             }
             /*
                 State: IDLE
-                Behavior: Listen for discovery message. Send config packets every 
-                IDLE_CONFIG_MS
+                Behavior: Listen for discovery message.
                 
                 Transition: On receipt of discovery message, store server's IP/port, start
                 timer for DISCOVERY_MS, and transition to DISCOVERY state.
@@ -102,12 +115,12 @@ void loop() {
                             server_port = udp.remotePort();
                             print("Setting server as %s:%d\n", server_ip.toString().c_str(), server_port);
                             
-                            udp.stop();
-                            local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
-                            print("Restarting UDP service on port %d\n", local_port);
-                            udp.begin(local_port);
+                            // udp.stop();
+                            // local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
+                            // print("Restarting UDP service on port %d\n", local_port);
+                            // udp.begin(local_port);
 
-                            // TODO: Start discovery timer
+                            timer.set_timeout_ms(DISCOVERY_TIMEOUT_MS);
                             print("Transition: IDLE ==> DISCOVERY\n");
                             state = DISCOVERY;
                         }
@@ -124,6 +137,7 @@ void loop() {
                 received before timeout, transition to IDLE state.
             */
             case DISCOVERY: {
+                // Send config packet to server
                 if (!udp.beginPacket(server_ip, server_port)) {
                     print("Failed to begin packet!\n");
                 }
@@ -138,6 +152,7 @@ void loop() {
                     print("Failed to end packet!\n");
                 }
                 
+                // Check for ack packet from server
                 int packet_size = udp.parsePacket();
                 if (packet_size) {
                     print("%d bytes from %s:%d\n", packet_size, udp.remoteIP().toString().c_str(), udp.remotePort());
@@ -152,6 +167,10 @@ void loop() {
                     }
                 }
 
+                if (timer.has_elapsed()) {
+                    print("Timed out\n");
+                    print("Transition: DISCOVERY ==> IDLE\n");
+                }
                 vTaskDelay(DISCOVERY_CONFIG_MS / portTICK_PERIOD_MS);
 
                 break;
@@ -163,9 +182,11 @@ void loop() {
                 than the last received, immediately send to LEDs and update the last seen
                 sequence number.
                 
-                Transition: On receipt of discovery message, transition to DISCOVERY state.
+                Transition: On receipt of discovery message, transition back to IDLE state in
+                order to re-establish connection.
             */
             case DATA: {
+                // Check for data from server
                 int packet_size = udp.parsePacket();
                 if (packet_size) {
                     print("%d bytes from %s:%d\n", packet_size, udp.remoteIP().toString().c_str(), udp.remotePort());
@@ -175,6 +196,17 @@ void loop() {
                         if (decoded_message.type == MessageType_DATA) {
                             print("Received data!\n");
                             print("Sequence number = %d\n", decoded_message.sequence_number);
+                            size_t to_copy = NUM_LEDS * 3;
+                            if (decoded_message.data.led_data.size < to_copy) {
+                                to_copy = decoded_message.data.led_data.size;
+                            }
+                            memcpy(leds, decoded_message.data.led_data.bytes, to_copy);
+                            FastLED.show();
+                        }
+                        if (decoded_message.type == MessageType_DISCOVERY) {
+                            print("Received unexpected discovery message! Resetting\n");
+                            print("Transition: DATA ==> IDLE\n");
+                            state = IDLE;
                         }
                     }
                 }
