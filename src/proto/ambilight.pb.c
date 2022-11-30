@@ -9,4 +9,16 @@
 PB_BIND(Example, Example, AUTO)
 
 
+PB_BIND(Message, Message, 2)
+
+
+PB_BIND(Message_Config, Message_Config, AUTO)
+
+
+PB_BIND(Message_Data, Message_Data, 2)
+
+
+
+
+
 

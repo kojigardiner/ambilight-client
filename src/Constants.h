@@ -10,12 +10,13 @@ const char* const MDNS_DOMAIN_NAME = "ambilight-client";
 const char* const PREFS_WIFI_SSID_KEY = "wifi_ssid";
 const char* const PREFS_WIFI_PASS_KEY = "wifi_pass";
 
-// Networking
-const uint8_t WIFI_LOCAL_IP[4] = {192, 168, 3, 179};
-const uint8_t WIFI_GATEWAY[4] = {192, 168, 1, 1};
-const uint8_t WIFI_SUBNET[4] = {255, 255, 0, 0};
-const uint8_t WIFI_DNS1[4] = {8, 8, 8, 8};
-const uint8_t WIFI_DNS2[4] = {8, 8, 4, 4};
+// State machine
+typedef enum state {
+    START,
+    IDLE,
+    DISCOVERY,
+    DATA,
+} state_t;
 
 // Macros
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
@@ -34,4 +35,17 @@ const uint8_t WIFI_DNS2[4] = {8, 8, 4, 4};
 #define MAX_CLI_MENU_ITEMS 9  // max items per level of CLI
 #define MAX_CLI_MENU_TEXT 64  // max text length for CLI menu items
 
+// Max protobuf message size
+#define MAX_MESSAGE_BYTES 1460
+
+// Timeouts
 #define WIFI_TIMEOUT_MS 10000               // how long to wait on wifi connect before bailing out
+#define DISCOVERY_CONFIG_MS 1000            // how long to wait between discovery loops
+
+// UDP Port Range
+#define UDP_BROADCAST_PORT 3000
+#define MIN_UDP_PORT 49152
+#define MAX_UDP_PORT 65535
+
+// LED
+#define NUM_LEDS 114

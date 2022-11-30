@@ -49,6 +49,11 @@ the timeout.
 
   ## State Machines
   ### Client
+  *State: START*
+  Behavior: Setup UDP port.
+
+  Transition: Once setup, transition to IDLE.
+
   *State: IDLE*
 
   Behavior: Listen for discovery message. Send config packets every 
@@ -66,7 +71,9 @@ the timeout.
 
   *State: DATA*
 
-  Behavior: Listen for data messages. Immediately parse and send to LEDs.
+  Behavior: Listen for data messages and parse. If the sequence number is larger 
+  than the last received, immediately send to LEDs and update the last seen
+  sequence number.
   
   Transition: On receipt of discovery message, transition to DISCOVERY state.
 
