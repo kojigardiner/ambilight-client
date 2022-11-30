@@ -115,6 +115,12 @@ void loop() {
                             server_port = udp.remotePort();
                             print("Setting server as %s:%d\n", server_ip.toString().c_str(), server_port);
                             
+                            // Commented out the code below to keep using the UDP_BROADCAST_PORT 
+                            // instead of randomizing it.
+                            // In a real-world use case we probably want to randomize the port to
+                            // prevent server spoofing attacks, but this allows us to keep listening
+                            // for discovery packets once we start collecting data.
+
                             // udp.stop();
                             // local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
                             // print("Restarting UDP service on port %d\n", local_port);
