@@ -14,7 +14,9 @@ const char* const PREFS_WIFI_PASS_KEY = "wifi_pass";
 typedef enum state {
     START,
     IDLE,
+    TO_DISCOVERY,
     DISCOVERY,
+    TO_DATA,
     DATA,
 } state_t;
 
@@ -43,6 +45,8 @@ typedef enum state {
 #define WIFI_TIMEOUT_MS 10000               // how long to wait on wifi connect before bailing out
 #define DISCOVERY_CONFIG_MS 1000            // how long to wait between discovery loops
 #define DISCOVERY_TIMEOUT_MS 10000          // how long to wait in discovery state before returning to idle
+#define HEARTBEAT_MS 2000                   // how often to send a heartbeat to the server
+#define HEARTBEAT_ACK_MS 10000              // how long wait for a heartbeat response
 
 // UDP Port Range
 #define UDP_BROADCAST_PORT 3000

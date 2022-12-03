@@ -11,10 +11,12 @@
 
 /* Enum definitions */
 typedef enum _MessageType { 
-    MessageType_ACK = 0, 
+    MessageType_ACK_DISCOVERY = 0, 
     MessageType_DISCOVERY = 1, 
     MessageType_CONFIG = 2, 
-    MessageType_DATA = 3 
+    MessageType_DATA = 3, 
+    MessageType_HEARTBEAT = 4, 
+    MessageType_ACK_HEARTBEAT = 5 
 } MessageType;
 
 typedef enum _Sender { 
@@ -59,7 +61,7 @@ typedef struct _Message {
     bool has_sequence_number;
     int32_t sequence_number;
     bool has_timestamp;
-    int32_t timestamp;
+    int64_t timestamp;
     bool has_config;
     Message_Config config;
     bool has_data;
@@ -68,9 +70,9 @@ typedef struct _Message {
 
 
 /* Helper constants for enums */
-#define _MessageType_MIN MessageType_ACK
-#define _MessageType_MAX MessageType_DATA
-#define _MessageType_ARRAYSIZE ((MessageType)(MessageType_DATA+1))
+#define _MessageType_MIN MessageType_ACK_DISCOVERY
+#define _MessageType_MAX MessageType_ACK_HEARTBEAT
+#define _MessageType_ARRAYSIZE ((MessageType)(MessageType_ACK_HEARTBEAT+1))
 
 #define _Sender_MIN Sender_SERVER
 #define _Sender_MAX Sender_CLIENT_AUDIOBOX
@@ -113,7 +115,7 @@ extern "C" {
 X(a, STATIC,   OPTIONAL, UENUM,    sender,            1) \
 X(a, STATIC,   OPTIONAL, UENUM,    type,              2) \
 X(a, STATIC,   OPTIONAL, INT32,    sequence_number,   3) \
-X(a, STATIC,   OPTIONAL, INT32,    timestamp,         4) \
+X(a, STATIC,   OPTIONAL, INT64,    timestamp,         4) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  config,            5) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  data,              6)
 #define Message_CALLBACK NULL

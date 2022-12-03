@@ -16,7 +16,8 @@
 
 // Function Prototypes
 bool parse_pb(WiFiUDP *udp, int packet_size, Message *message);
-bool create_config_pb(uint8_t *buffer, size_t *message_length, IPAddress local_ip, uint16_t local_port);
+bool create_pb(MessageType type, uint8_t *buffer, size_t *message_length);
+bool create_pb(MessageType type, uint8_t *buffer, size_t *message_length, IPAddress local_ip, uint16_t local_port);
 
 // Global LEDs array
 CRGB leds[NUM_LEDS] = {0};
@@ -40,9 +41,6 @@ void setup() {
     if (!connect_wifi()) {
         print("Failed to connect to wifi!");
     }
-    
-    // Minimize latency in exchange for using more power
-    WiFi.setSleep(false);
 
     // Setup LEDs
     print("Initializing LEDs on pin %d\n", PIN_LED_CONTROL);
@@ -72,6 +70,7 @@ void loop() {
     uint32_t sequence_number = -1;
 
     Timer timer = Timer();
+    Timer timer_ack = Timer();
 
     state_t state = START;
 
@@ -80,15 +79,18 @@ void loop() {
         switch (state) {
             /*
                 State: START
-                Behavior: Setup UDP port to receive broadcast messages.
+                Behavior: Setup UDP port to receive broadcast messages. Set wifi 
+                power saving.
                 Transition: Once setup, transition to IDLE.
              */
             case START: {
+                udp.stop();
                 local_ip = WiFi.localIP();
                 local_port = UDP_BROADCAST_PORT;
                 print("Starting UDP at %s:%d\n", local_ip.toString().c_str(), local_port);
                 udp.begin(local_port);
-
+                print("Enabling wifi power saving\n");
+                WiFi.setSleep(true);
                 print("Transition: START ==> IDLE\n");
                 state = IDLE;
                 break;
@@ -97,8 +99,8 @@ void loop() {
                 State: IDLE
                 Behavior: Listen for discovery message.
                 
-                Transition: On receipt of discovery message, store server's IP/port, start
-                timer for DISCOVERY_MS, and transition to DISCOVERY state.
+                Transition: On receipt of discovery message, store server's IP/port, 
+                start transition to TO_DISCOVERY state.
             */
             case IDLE: {
                 int packet_size = udp.parsePacket();
@@ -126,12 +128,24 @@ void loop() {
                             print("Restarting UDP service on port %d\n", local_port);
                             udp.begin(local_port);
 
-                            timer.set_timeout_ms(DISCOVERY_TIMEOUT_MS);
-                            print("Transition: IDLE ==> DISCOVERY\n");
-                            state = DISCOVERY;
+                            print("Transition: IDLE ==> TO_DISCOVERY\n");
+                            state = TO_DISCOVERY;
                         }
                     }
                 }
+                break;
+            }
+            /*
+                State: TO_DISCOVERY
+
+                Behavior: Set discovery timeout timer.
+
+                Transition: Immediately transition to DISCOVERY.
+            */
+            case TO_DISCOVERY: {
+                timer.set_timeout_ms(DISCOVERY_TIMEOUT_MS);
+                print("Transition: TO_DISCOVERY ==> DISCOVERY\n");
+                state = DISCOVERY;
                 break;
             }
             /*
@@ -139,15 +153,15 @@ void loop() {
 
                 Behavior: Send config packets every DISCOVERY_CONFIG_MS.
 
-                Transition: On receipt of ACK, transition to DATA state. If no ACK is
-                received before timeout, transition to IDLE state.
+                Transition: On receipt of ACK, transition to TO_DATA state. If no ACK is
+                received before timeout, transition to START state.
             */
             case DISCOVERY: {
                 // Send config packet to server
                 if (!udp.beginPacket(server_ip, server_port)) {
                     print("Failed to begin packet!\n");
                 }
-                if (create_config_pb(encoded_message, &message_length, local_ip, local_port)) {
+                if (create_pb(MessageType_CONFIG, encoded_message, &message_length, local_ip, local_port)) {
                     print("Sending config message of length %d\n", message_length);
                     size_t written = udp.write(encoded_message, message_length);
                     if (written != message_length) {
@@ -165,21 +179,37 @@ void loop() {
 
                     Message decoded_message = Message_init_zero;    // reset the message
                     if (parse_pb(&udp, packet_size, &decoded_message)) {
-                        if (decoded_message.type == MessageType_ACK) {
-                            print("Received ack!\n");
-                            print("Transition: DISCOVERY ==> DATA\n");
-                            state = DATA;
+                        if (decoded_message.type == MessageType_ACK_DISCOVERY) {
+                            print("Received discovery ack!\n");
+                            print("Transition: DISCOVERY ==> TO_DATA\n");
+                            state = TO_DATA;
                         }
                     }
                 }
 
                 if (timer.has_elapsed()) {
                     print("Timed out\n");
-                    print("Transition: DISCOVERY ==> IDLE\n");
-                    state = IDLE;
+                    print("Transition: DISCOVERY ==> START\n");
+                    state = START;
                 }
                 vTaskDelay(DISCOVERY_CONFIG_MS / portTICK_PERIOD_MS);
 
+                break;
+            }
+            /*
+                State: TO_DATA
+
+                Behavior: Set wifi power saving off. Set heartbeat timers.
+                
+                Transition: Immediately transition to DATA.
+            */
+            case TO_DATA: {
+                WiFi.setSleep(false);
+                timer.set_timeout_ms(HEARTBEAT_MS);
+                timer_ack.set_timeout_ms(HEARTBEAT_ACK_MS);
+                print("Disabling wifi power saving\n");
+                print("Transition: TO_DATA ==> DATA\n");
+                state = DATA;
                 break;
             }
             /*
@@ -210,12 +240,37 @@ void loop() {
                             memcpy(leds, decoded_message.data.led_data.bytes, to_copy);
                             FastLED.show();
                         }
+                        if (decoded_message.type == MessageType_ACK_HEARTBEAT) {
+                            print("Received heartbeat ack!\n");
+                            timer_ack.reset();
+                        }
                         // if (decoded_message.type == MessageType_DISCOVERY) {
                         //     print("Received unexpected discovery message! Resetting\n");
                         //     print("Transition: DATA ==> IDLE\n");
                         //     state = IDLE;
                         // }
                     }
+                }
+                // Send heartbeat
+                if (timer.has_elapsed(true)) {
+                    if (!udp.beginPacket(server_ip, server_port)) {
+                        print("Failed to begin packet!\n");
+                    }
+                    create_pb(MessageType_HEARTBEAT, encoded_message, &message_length);
+                    print("Sending heartbeat message of length %d\n", message_length);
+                    size_t written = udp.write(encoded_message, message_length);
+                    if (written != message_length) {
+                        print("Only wrote %d instead of %d bytes!\n", written, message_length);
+                    }
+                    if (!udp.endPacket()) {
+                        print("Failed to end packet!\n");
+                    }
+                }
+                // Check that we have received an ack from the server
+                if (timer_ack.has_elapsed()) {
+                    print("Timed out waiting for heartbeat ack from server!\n");
+                    print("Transition: DATA ==> START\n");
+                    state = START;
                 }
                 break;
             }
@@ -228,10 +283,18 @@ void loop() {
 }
 
 /*
-    Creates a serialized config message, stores it in the buffer pointer and
-    updates the message_length variable.
+    Creates a serialized message, stores it in the buffer pointer and updates 
+    the message_length variable.
 */
-bool create_config_pb(uint8_t *buffer, size_t *message_length, IPAddress local_ip, uint16_t local_port) {
+bool create_pb(MessageType type, uint8_t *buffer, size_t *message_length) {
+    return create_pb(type, buffer, message_length, IPAddress(), 0);
+}
+
+/*
+    Creates a serialized message, stores it in the buffer pointer and updates 
+    the message_length variable.
+*/
+bool create_pb(MessageType type, uint8_t *buffer, size_t *message_length, IPAddress local_ip, uint16_t local_port) {
     bool status;
 
     // Initialize the message memory
@@ -245,22 +308,35 @@ bool create_config_pb(uint8_t *buffer, size_t *message_length, IPAddress local_i
     message.has_sender = true;
     message.sender = Sender_CLIENT_AMBILIGHT;
 
-    message.has_type = true;
-    message.type = MessageType_CONFIG;
+    switch (type) {
+        case MessageType_CONFIG: {
+            message.has_type = true;
+            message.type = MessageType_CONFIG;
 
-    message.has_config = true;
-    message.config.has_ipv4 = true;
-    strlcpy(message.config.ipv4, local_ip.toString().c_str(), sizeof(message.config.ipv4) - 1);
+            message.has_config = true;
+            message.config.has_ipv4 = true;
+            strlcpy(message.config.ipv4, local_ip.toString().c_str(), sizeof(message.config.ipv4) - 1);
 
-    message.config.has_port = true;
-    message.config.port = local_port;
+            message.config.has_port = true;
+            message.config.port = local_port;
 
-    message.config.has_led_format = true;
-    message.config.led_format = LedFormat_RECTANGULAR_PERIMETER;
+            message.config.has_led_format = true;
+            message.config.led_format = LedFormat_RECTANGULAR_PERIMETER;
 
-    message.config.has_num_leds = true;
-    message.config.num_leds = NUM_LEDS;
-
+            message.config.has_num_leds = true;
+            message.config.num_leds = NUM_LEDS;
+            break;
+        }
+        case MessageType_HEARTBEAT: {
+            message.has_type = true;
+            message.type = MessageType_HEARTBEAT;
+            break;
+        }
+        default: {
+            print("pb type not recognized!\n");
+            return false;
+        }
+    }
     // Encode the message
     status = pb_encode(&stream, Message_fields, &message);
     *message_length = stream.bytes_written;
