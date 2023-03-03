@@ -46,17 +46,33 @@ void setup() {
     print("Setup complete\n\n");
 }
 
-// void udp_config_callback(Message *message) {
+void udp_tx_callback(Message *message) {
+    message->has_sender = true;
+    message->sender = Sender_CLIENT_AMBILIGHT;
+    if (message->type == MessageType_CONFIG) {
+        message->config.has_led_format = true;
+        message->config.led_format = LedFormat_RECTANGULAR_PERIMETER;
 
-// }
+        message->config.has_num_leds = true;
+        message->config.num_leds = NUM_LEDS;
+    }
+}
 
-// void udp_data_callback() {
-
-// }
+void udp_rx_callback(Message *message) {
+    if (message->type == MessageType_DATA) {
+        print("Sequence number = %d\n", message->sequence_number);
+        size_t to_copy = NUM_LEDS * 3;
+        if (message->data.led_data.size < to_copy) {
+            to_copy = message->data.led_data.size;
+        }
+        memcpy(leds, message->data.led_data.bytes, to_copy);
+        FastLED.show();
+    }
+}
 
 void loop() {
     Message message;
-    UDPClient udp = UDPClient(&message, WiFi.localIP());
+    UDPClient udp = UDPClient(&message, WiFi.localIP(), udp_tx_callback, udp_rx_callback);
     state_t state = udp.get_state();
 
     while (1) {
@@ -66,14 +82,5 @@ void loop() {
             WiFi.setSleep(false);
         }
         state = udp.advance();
-        if (state == DATA && message.type == MessageType_DATA) {
-            print("Sequence number = %d\n", message.sequence_number);
-            size_t to_copy = NUM_LEDS * 3;
-            if (message.data.led_data.size < to_copy) {
-                to_copy = message.data.led_data.size;
-            }
-            memcpy(leds, message.data.led_data.bytes, to_copy);
-            FastLED.show();
-        }
     }
 }

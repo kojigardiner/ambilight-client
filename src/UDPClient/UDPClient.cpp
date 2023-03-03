@@ -2,7 +2,7 @@
 #include "UDPClient.h"
 #include "Utils/Utils.h"
 
-UDPClient::UDPClient(Message *message, IPAddress local_ip) {
+UDPClient::UDPClient(Message *message, IPAddress local_ip, void (*tx_callback)(Message *message), void (*rx_callback)(Message *message)) {
     _message = message;
     _state = START;
     _sequence_number = 0;
@@ -10,6 +10,8 @@ UDPClient::UDPClient(Message *message, IPAddress local_ip) {
     _local_port = UDP_BROADCAST_PORT;
     _timer = Timer();
     _timer_ack = Timer();
+    _tx_callback = tx_callback;
+    _rx_callback = rx_callback;
 }
 
 state_t UDPClient::advance() {
@@ -39,8 +41,7 @@ state_t UDPClient::advance() {
             if (packet_size) {
                 print("%d bytes from %s:%d\n", packet_size, _udp.remoteIP().toString().c_str(), _udp.remotePort());
 
-                *_message = (Message)Message_init_zero;    // reset the message
-                if (_parse_pb(&_udp, packet_size, _message)) {
+                if (_parse_pb(&_udp, packet_size)) {
                     if (_message->type == MessageType_DISCOVERY) {
                         print("Received discovery message!\n");
 
@@ -109,8 +110,7 @@ state_t UDPClient::advance() {
             if (packet_size) {
                 print("%d bytes from %s:%d\n", packet_size, _udp.remoteIP().toString().c_str(), _udp.remotePort());
 
-                *_message = (Message)Message_init_zero;    // reset the message
-                if (_parse_pb(&_udp, packet_size, _message)) {
+                if (_parse_pb(&_udp, packet_size)) {
                     if (_message->type == MessageType_ACK_DISCOVERY) {
                         print("Received discovery ack!\n");
                         print("Transition: DISCOVERY ==> TO_DATA\n");
@@ -138,7 +138,6 @@ state_t UDPClient::advance() {
         case TO_DATA: {
             _timer.set_timeout_ms(HEARTBEAT_MS);
             _timer_ack.set_timeout_ms(HEARTBEAT_ACK_MS);
-            print("Disabling wifi power saving\n");
             print("Transition: TO_DATA ==> DATA\n");
             _state = DATA;
             break;
@@ -159,11 +158,10 @@ state_t UDPClient::advance() {
             if (packet_size) {
                 print("%d bytes from %s:%d\n", packet_size, _udp.remoteIP().toString().c_str(), _udp.remotePort());
 
-                *_message = (Message)Message_init_zero;    // reset the message
-                if (_parse_pb(&_udp, packet_size, _message)) {
+                if (_parse_pb(&_udp, packet_size)) {
+                    _rx_callback(_message);
                     if (_message->type == MessageType_DATA) {
                         print("Received data!\n");
-                        // Caller can perform specific handling on their end
                     }
                     if (_message->type == MessageType_ACK_HEARTBEAT) {
                         print("Received heartbeat ack!\n");
@@ -228,38 +226,28 @@ bool UDPClient::_create_pb(MessageType type, uint8_t *buffer, size_t *message_le
     bool status;
 
     // Initialize the message memory
-    Message message = Message_init_zero;
+    *_message = (Message)Message_init_zero;
 
     // Create a stream that will write to our buffer
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, MAX_MESSAGE_BYTES);
 
     // Fill the message. IMPORTANT: the has_ fields must be explicitly set to
     // true, otherwise they will not be encoded.
-    message.has_sender = true;
-    message.sender = Sender_CLIENT_AMBILIGHT;
+
+    _message->has_type = true;
+    _message->type = type;
 
     switch (type) {
         case MessageType_CONFIG: {
-            message.has_type = true;
-            message.type = MessageType_CONFIG;
+            _message->has_config = true;
+            _message->config.has_ipv4 = true;
+            strlcpy(_message->config.ipv4, _local_ip.toString().c_str(), sizeof(_message->config.ipv4) - 1);
 
-            message.has_config = true;
-            message.config.has_ipv4 = true;
-            strlcpy(message.config.ipv4, local_ip.toString().c_str(), sizeof(message.config.ipv4) - 1);
-
-            message.config.has_port = true;
-            message.config.port = local_port;
-
-            message.config.has_led_format = true;
-            message.config.led_format = LedFormat_RECTANGULAR_PERIMETER;
-
-            message.config.has_num_leds = true;
-            message.config.num_leds = NUM_LEDS;
+            _message->config.has_port = true;
+            _message->config.port = local_port;
             break;
         }
         case MessageType_HEARTBEAT: {
-            message.has_type = true;
-            message.type = MessageType_HEARTBEAT;
             break;
         }
         default: {
@@ -267,8 +255,11 @@ bool UDPClient::_create_pb(MessageType type, uint8_t *buffer, size_t *message_le
             return false;
         }
     }
+
+    _tx_callback(_message); // caller will populate sender field and any config-specific information
+
     // Encode the message
-    status = pb_encode(&stream, Message_fields, &message);
+    status = pb_encode(&stream, Message_fields, _message);
     *message_length = stream.bytes_written;
 
     if (!status) {
@@ -283,7 +274,7 @@ bool UDPClient::_create_pb(MessageType type, uint8_t *buffer, size_t *message_le
     at the passed in message pointer. Returns true is successful, false
     otherwise.
 */
-bool UDPClient::_parse_pb(WiFiUDP *udp, int packet_size, Message *message) {
+bool UDPClient::_parse_pb(WiFiUDP *udp, int packet_size) {
     bool status;
     uint8_t buffer[MAX_MESSAGE_BYTES];
     int len = udp->read(buffer, MAX_MESSAGE_BYTES - 1);
@@ -296,8 +287,10 @@ bool UDPClient::_parse_pb(WiFiUDP *udp, int packet_size, Message *message) {
     // Create a stream that reads from the buffer
     pb_istream_t stream = pb_istream_from_buffer(buffer, packet_size);
 
+    *_message = (Message)Message_init_zero;    // reset the message
+
     // Now decode the message
-    status = pb_decode(&stream, Message_fields, message);
+    status = pb_decode(&stream, Message_fields, _message);
 
     if (!status) {
         printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
