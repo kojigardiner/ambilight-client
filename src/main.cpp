@@ -46,230 +46,34 @@ void setup() {
     print("Setup complete\n\n");
 }
 
+// void udp_config_callback(Message *message) {
+
+// }
+
+// void udp_data_callback() {
+
+// }
+
 void loop() {
-    WiFiUDP udp;
-    
-    IPAddress server_ip;
-    uint16_t server_port;
+    Message message;
+    UDPClient udp = UDPClient(&message, WiFi.localIP());
+    state_t state = udp.get_state();
 
-    IPAddress local_ip;
-    uint16_t local_port;
-
-    // For sending encoded messages
-    uint8_t encoded_message[MAX_MESSAGE_BYTES];
-    size_t message_length;
-
-    uint32_t sequence_number = -1;
-
-    Timer timer = Timer();
-    Timer timer_ack = Timer();
-
-    state_t state = START;
-
-
-    for (;;) {
-        switch (state) {
-            /*
-                State: START
-                Behavior: Setup UDP port to receive broadcast messages. Set wifi 
-                power saving.
-                Transition: Once setup, transition to IDLE.
-             */
-            case START: {
-                udp.stop();
-                local_ip = WiFi.localIP();
-                local_port = UDP_BROADCAST_PORT;
-                print("Starting UDP at %s:%d\n", local_ip.toString().c_str(), local_port);
-                udp.begin(local_port);
-                print("Enabling wifi power saving\n");
-                WiFi.setSleep(true);
-                print("Transition: START ==> IDLE\n");
-                state = IDLE;
-                break;
+    while (1) {
+        if (state == START) {
+            WiFi.setSleep(true);
+        } else if (state == TO_DATA) {
+            WiFi.setSleep(false);
+        }
+        state = udp.advance();
+        if (state == DATA && message.type == MessageType_DATA) {
+            print("Sequence number = %d\n", message.sequence_number);
+            size_t to_copy = NUM_LEDS * 3;
+            if (message.data.led_data.size < to_copy) {
+                to_copy = message.data.led_data.size;
             }
-            /*
-                State: IDLE
-                Behavior: Listen for discovery message.
-                
-                Transition: On receipt of discovery message, store server's IP/port, 
-                start transition to TO_DISCOVERY state.
-            */
-            case IDLE: {
-                int packet_size = udp.parsePacket();
-                if (packet_size) {
-                    print("%d bytes from %s:%d\n", packet_size, udp.remoteIP().toString().c_str(), udp.remotePort());
-
-                    Message decoded_message = Message_init_zero;    // reset the message
-                    if (parse_pb(&udp, packet_size, &decoded_message)) {
-                        if (decoded_message.type == MessageType_DISCOVERY) {
-                            print("Received discovery message!\n");
-
-                            server_ip = udp.remoteIP();
-                            server_port = udp.remotePort();
-                            print("Setting server as %s:%d\n", server_ip.toString().c_str(), server_port);
-                            
-                            // Comment out the code below to keep using the UDP_BROADCAST_PORT 
-                            // instead of randomizing it.
-                            // In a real-world use case we probably want to randomize the port to
-                            // prevent server spoofing attacks. Continuing to use UDP_BROADCAST_PORT
-                            // allows us to keep listening for discovery packets 
-                            // once we start collecting data.
-
-                            udp.stop();
-                            local_port = (rand() % (MAX_UDP_PORT - MIN_UDP_PORT)) + MIN_UDP_PORT;
-                            print("Restarting UDP service on port %d\n", local_port);
-                            udp.begin(local_port);
-
-                            print("Transition: IDLE ==> TO_DISCOVERY\n");
-                            state = TO_DISCOVERY;
-                        }
-                    }
-                }
-                break;
-            }
-            /*
-                State: TO_DISCOVERY
-
-                Behavior: Set discovery timeout timer.
-
-                Transition: Immediately transition to DISCOVERY.
-            */
-            case TO_DISCOVERY: {
-                timer.set_timeout_ms(DISCOVERY_TIMEOUT_MS);
-                print("Transition: TO_DISCOVERY ==> DISCOVERY\n");
-                state = DISCOVERY;
-                break;
-            }
-            /*
-                State: DISCOVERY
-
-                Behavior: Send config packets every DISCOVERY_CONFIG_MS.
-
-                Transition: On receipt of ACK, transition to TO_DATA state. If no ACK is
-                received before timeout, transition to START state.
-            */
-            case DISCOVERY: {
-                // Send config packet to server
-                if (!udp.beginPacket(server_ip, server_port)) {
-                    print("Failed to begin packet!\n");
-                }
-                if (create_pb(MessageType_CONFIG, encoded_message, &message_length, local_ip, local_port)) {
-                    print("Sending config message of length %d\n", message_length);
-                    size_t written = udp.write(encoded_message, message_length);
-                    if (written != message_length) {
-                        print("Only wrote %d instead of %d bytes!\n", written, message_length);
-                    }
-                }
-                if (!udp.endPacket()) {
-                    print("Failed to end packet!\n");
-                }
-                
-                // Check for ack packet from server
-                int packet_size = udp.parsePacket();
-                if (packet_size) {
-                    print("%d bytes from %s:%d\n", packet_size, udp.remoteIP().toString().c_str(), udp.remotePort());
-
-                    Message decoded_message = Message_init_zero;    // reset the message
-                    if (parse_pb(&udp, packet_size, &decoded_message)) {
-                        if (decoded_message.type == MessageType_ACK_DISCOVERY) {
-                            print("Received discovery ack!\n");
-                            print("Transition: DISCOVERY ==> TO_DATA\n");
-                            state = TO_DATA;
-                        }
-                    }
-                }
-
-                if (timer.has_elapsed()) {
-                    print("Timed out\n");
-                    print("Transition: DISCOVERY ==> START\n");
-                    state = START;
-                }
-                vTaskDelay(DISCOVERY_CONFIG_MS / portTICK_PERIOD_MS);
-
-                break;
-            }
-            /*
-                State: TO_DATA
-
-                Behavior: Set wifi power saving off. Set heartbeat timers.
-                
-                Transition: Immediately transition to DATA.
-            */
-            case TO_DATA: {
-                WiFi.setSleep(false);
-                timer.set_timeout_ms(HEARTBEAT_MS);
-                timer_ack.set_timeout_ms(HEARTBEAT_ACK_MS);
-                print("Disabling wifi power saving\n");
-                print("Transition: TO_DATA ==> DATA\n");
-                state = DATA;
-                break;
-            }
-            /*
-                State: DATA
-
-                Behavior: Listen for data messages and parse. If the sequence number is larger 
-                than the last received, immediately send to LEDs and update the last seen
-                sequence number.
-                
-                Transition: On receipt of discovery message, transition back to IDLE state in
-                order to re-establish connection.
-            */
-            case DATA: {
-                // Check for data from server
-                int packet_size = udp.parsePacket();
-                if (packet_size) {
-                    print("%d bytes from %s:%d\n", packet_size, udp.remoteIP().toString().c_str(), udp.remotePort());
-
-                    Message decoded_message = Message_init_zero;    // reset the message
-                    if (parse_pb(&udp, packet_size, &decoded_message)) {
-                        if (decoded_message.type == MessageType_DATA) {
-                            print("Received data!\n");
-                            print("Sequence number = %d\n", decoded_message.sequence_number);
-                            size_t to_copy = NUM_LEDS * 3;
-                            if (decoded_message.data.led_data.size < to_copy) {
-                                to_copy = decoded_message.data.led_data.size;
-                            }
-                            memcpy(leds, decoded_message.data.led_data.bytes, to_copy);
-                            FastLED.show();
-                        }
-                        if (decoded_message.type == MessageType_ACK_HEARTBEAT) {
-                            print("Received heartbeat ack!\n");
-                            timer_ack.reset();
-                        }
-                        // if (decoded_message.type == MessageType_DISCOVERY) {
-                        //     print("Received unexpected discovery message! Resetting\n");
-                        //     print("Transition: DATA ==> IDLE\n");
-                        //     state = IDLE;
-                        // }
-                    }
-                }
-                // Send heartbeat
-                if (timer.has_elapsed(true)) {
-                    if (!udp.beginPacket(server_ip, server_port)) {
-                        print("Failed to begin packet!\n");
-                    }
-                    create_pb(MessageType_HEARTBEAT, encoded_message, &message_length);
-                    print("Sending heartbeat message of length %d\n", message_length);
-                    size_t written = udp.write(encoded_message, message_length);
-                    if (written != message_length) {
-                        print("Only wrote %d instead of %d bytes!\n", written, message_length);
-                    }
-                    if (!udp.endPacket()) {
-                        print("Failed to end packet!\n");
-                    }
-                }
-                // Check that we have received an ack from the server
-                if (timer_ack.has_elapsed()) {
-                    print("Timed out waiting for heartbeat ack from server!\n");
-                    print("Transition: DATA ==> START\n");
-                    state = START;
-                }
-                break;
-            }
-            default: {
-                print("Client state %d not recognized!\n", state);
-                break;
-            }
+            memcpy(leds, message.data.led_data.bytes, to_copy);
+            FastLED.show();
         }
     }
 }

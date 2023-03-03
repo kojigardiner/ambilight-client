@@ -10,16 +10,6 @@ const char* const MDNS_DOMAIN_NAME = "ambilight-client";
 const char* const PREFS_WIFI_SSID_KEY = "wifi_ssid";
 const char* const PREFS_WIFI_PASS_KEY = "wifi_pass";
 
-// State machine
-typedef enum state {
-    START,
-    IDLE,
-    TO_DISCOVERY,
-    DISCOVERY,
-    TO_DATA,
-    DATA,
-} state_t;
-
 // Macros
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 #define TIME_THIS(A)                       \
