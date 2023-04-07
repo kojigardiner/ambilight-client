@@ -23,6 +23,7 @@ state_t UDPClient::advance() {
         */
         case START: {
             _udp.stop();
+            _local_port = UDP_BROADCAST_PORT;
             print("Starting UDP at %s:%d\n", _local_ip.toString().c_str(), _local_port);
             _udp.begin(_local_port);
             print("Transition: START ==> IDLE\n");
@@ -161,7 +162,7 @@ state_t UDPClient::advance() {
                 if (_parse_pb(&_udp, packet_size)) {
                     _rx_callback(_message);
                     if (_message->type == MessageType_DATA) {
-                        print("Received data!\n");
+                        print("Received data! Timestamps: %lld\n", (long long)_message->timestamp);
                     }
                     if (_message->type == MessageType_ACK_HEARTBEAT) {
                         print("Received heartbeat ack!\n");
