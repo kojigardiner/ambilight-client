@@ -74,13 +74,29 @@ void loop() {
     Message message;
     UDPClient udp = UDPClient(&message, WiFi.localIP(), udp_tx_callback, udp_rx_callback);
     state_t state = udp.get_state();
+    int brightness = 0;
 
     while (1) {
         if (state == START) {
+            brightness = 0;
             WiFi.setSleep(true);
         } else if (state == TO_DATA) {
             WiFi.setSleep(false);
         }
+
+        if (state == DATA) {
+            if (brightness < 255) {
+                brightness++;
+            }
+            FastLED.setBrightness(brightness);
+        }
+        // If there's no data streaming, fade to black
+        if (state != DATA) {
+            fadeToBlackBy(leds, NUM_LEDS, 1);
+        }
+        FastLED.show();
+
         state = udp.advance();
+        vTaskDelay(1);  // nominal delay for fade-to-black
     }
 }
